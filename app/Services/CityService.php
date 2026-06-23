@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\City;
 use Illuminate\Support\Facades\Cookie;
+use Illuminate\Support\Facades\Log;
 
 class CityService
 {
@@ -11,14 +12,21 @@ class CityService
 
     public function current(): City
     {
-        $slug = request()->cookie(self::COOKIE_NAME)
-            ?? auth()->user()?->city?->slug
-            ?? City::where('is_default', true)->value('slug')
-            ?? 'volgograd';
+        try {
+            $slug = request()->cookie(self::COOKIE_NAME)
+                ?? auth()->user()?->city?->slug
+                ?? City::where('is_default', true)->value('slug')
+                ?? 'volgograd';
 
-        return City::where('slug', $slug)->first()
-            ?? City::where('is_default', true)->first()
-            ?? City::firstOrFail();
+            return City::where('slug', $slug)->first()
+                ?? City::where('is_default', true)->first()
+                ?? City::first()
+                ?? $this->fallbackCity();
+        } catch (\Throwable $e) {
+            Log::warning('CityService::current failed', ['error' => $e->getMessage()]);
+
+            return $this->fallbackCity();
+        }
     }
 
     public function set(string $slug): City
@@ -36,6 +44,24 @@ class CityService
 
     public function all()
     {
-        return City::orderByDesc('is_default')->orderBy('name')->get();
+        try {
+            return City::orderByDesc('is_default')->orderBy('name')->get();
+        } catch (\Throwable $e) {
+            Log::warning('CityService::all failed', ['error' => $e->getMessage()]);
+
+            return collect([$this->fallbackCity()]);
+        }
+    }
+
+    private function fallbackCity(): City
+    {
+        $city = new City;
+        $city->id = 0;
+        $city->name = 'Волгоград';
+        $city->slug = 'volgograd';
+        $city->region = 'Волгоградская область';
+        $city->is_default = true;
+
+        return $city;
     }
 }
