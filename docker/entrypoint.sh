@@ -48,8 +48,6 @@ setup_app() {
                 log "Seeding data..."
                 php artisan db:seed --class=DeploySeeder --force --no-interaction 2>/dev/null || log "Seed warning"
             fi
-            php artisan config:cache 2>/dev/null || true
-            php artisan view:cache 2>/dev/null || true
             log "App setup complete."
             return 0
         fi

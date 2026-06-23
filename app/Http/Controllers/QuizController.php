@@ -19,7 +19,9 @@ class QuizController extends Controller
         $quiz = Quiz::query()
             ->with(['questions' => fn ($q) => $q->orderBy('sort_order'), 'questions.options'])
             ->where('is_active', true)
-            ->firstOrFail();
+            ->first();
+
+        abort_unless($quiz, 503, 'Тест ещё не настроен. Подождите завершения загрузки данных.');
 
         return view('quiz.show', compact('quiz'));
     }

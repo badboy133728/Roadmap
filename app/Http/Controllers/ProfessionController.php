@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\City;
 use App\Models\Institution;
 use App\Models\JobPlatform;
 use App\Models\Profession;
@@ -46,6 +47,16 @@ class ProfessionController extends Controller
         abort_unless($profession->is_active, 404);
 
         $city = $cityService->current();
+
+        if ($city->id > 0) {
+            $cityModel = $city;
+        } else {
+            $cityModel = City::where('is_default', true)->first()
+                ?? City::first()
+                ?? $city;
+        }
+
+        $city = $cityModel;
 
         $profession->load(['category', 'careerPathSteps']);
 
