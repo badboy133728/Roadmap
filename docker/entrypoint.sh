@@ -25,42 +25,40 @@ fi
 
 if [ -z "$APP_KEY" ] || [ "$APP_KEY" = "base64:" ]; then
     export APP_KEY=$(php artisan key:generate --show)
-    log "Generated APP_KEY — add to Railway variables!"
+    log "Generated APP_KEY — save to Railway variables!"
 fi
 
-php artisan config:clear
-php artisan route:clear
-php artisan view:clear
-
-log "Running migrations (required before site works)..."
-migrated=0
-for i in $(seq 1 60); do
-    if php artisan migrate --force --no-interaction 2>/dev/null; then
-        migrated=1
-        log "Migrations complete."
-        break
-    fi
-    log "DB not ready, attempt $i/60..."
-    sleep 2
-done
-
-if [ "$migrated" -ne 1 ]; then
-    log "WARNING: migrations failed — check DATABASE_URL on Railway web service"
-fi
+php artisan config:clear 2>/dev/null || true
+php artisan route:clear 2>/dev/null || true
+php artisan view:clear 2>/dev/null || true
 
 PORT="${PORT:-8080}"
+
+# Сервер сразу — healthcheck на /health проходит за секунды
 log "Starting server on 0.0.0.0:${PORT}..."
-php artisan serve --host=0.0.0.0 --port="${PORT}" &
+php -S "0.0.0.0:${PORT}" -t public public/index.php &
 SERVER_PID=$!
 
-if [ "${RUN_SEEDERS:-true}" = "true" ] && [ "$migrated" -eq 1 ]; then
-    log "Seeding in background..."
-    (
-        php artisan db:seed --class=DeploySeeder --force --no-interaction
-        php artisan config:cache || true
-        php artisan view:cache || true
-        log "Seeding complete."
-    ) &
-fi
+setup_app() {
+    log "Waiting for database and running migrations..."
+    for i in $(seq 1 90); do
+        if php artisan migrate --force --no-interaction 2>/dev/null; then
+            log "Migrations OK."
+            if [ "${RUN_SEEDERS:-true}" = "true" ]; then
+                log "Seeding data..."
+                php artisan db:seed --class=DeploySeeder --force --no-interaction 2>/dev/null || log "Seed warning"
+            fi
+            php artisan config:cache 2>/dev/null || true
+            php artisan view:cache 2>/dev/null || true
+            log "App setup complete."
+            return 0
+        fi
+        sleep 2
+    done
+    log "WARNING: Could not migrate — check DATABASE_URL on web service"
+    return 1
+}
+
+setup_app &
 
 wait $SERVER_PID
