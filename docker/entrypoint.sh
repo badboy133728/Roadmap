@@ -34,9 +34,9 @@ php artisan view:clear 2>/dev/null || true
 
 PORT="${PORT:-8080}"
 
-# Сервер сразу — healthcheck на /health проходит за секунды
+# artisan serve корректно отдаёт CSS/JS из public/build
 log "Starting server on 0.0.0.0:${PORT}..."
-php -S "0.0.0.0:${PORT}" -t public public/index.php &
+php artisan serve --host=0.0.0.0 --port="${PORT}" &
 SERVER_PID=$!
 
 setup_app() {
