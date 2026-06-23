@@ -3,6 +3,7 @@
 use App\Http\Controllers\CareerChangeController;
 use App\Http\Controllers\CityController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\HealthController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\ProfessionController;
 use App\Http\Controllers\ProfileController;
@@ -19,6 +20,8 @@ use Illuminate\Support\Facades\Route;
 | be assigned to the "web" middleware group. Make something great!
 |
 */
+
+Route::get('/health', HealthController::class);
 
 Route::get('/', [HomeController::class, 'index'])->name('home');
 
