@@ -32,6 +32,22 @@ PORT="${PORT:-8080}"
 
 sed "s/PORT_PLACEHOLDER/${PORT}/g" /etc/nginx/site.conf.template > /etc/nginx/sites-enabled/default
 
+log "Waiting for database and running migrations..."
+for i in $(seq 1 90); do
+    if php artisan migrate --force --no-interaction 2>/dev/null; then
+        log "Migrations OK."
+        if [ "${RUN_SEEDERS:-false}" = "true" ]; then
+            log "Seeding data..."
+            php artisan db:seed --class=DeploySeeder --force --no-interaction 2>/dev/null || log "Seed warning"
+        fi
+        break
+    fi
+    if [ "$i" -eq 90 ]; then
+        log "WARNING: Could not migrate — check DATABASE_URL on web service"
+    fi
+    sleep 2
+done
+
 log "Caching config, routes, views..."
 php artisan config:cache 2>/dev/null || true
 php artisan route:cache 2>/dev/null || true
@@ -42,27 +58,4 @@ log "Starting php-fpm..."
 php-fpm -D
 
 log "Starting nginx on 0.0.0.0:${PORT}..."
-nginx -g 'daemon off;' &
-NGINX_PID=$!
-
-setup_app() {
-    log "Waiting for database and running migrations..."
-    for i in $(seq 1 90); do
-        if php artisan migrate --force --no-interaction 2>/dev/null; then
-            log "Migrations OK."
-            if [ "${RUN_SEEDERS:-false}" = "true" ]; then
-                log "Seeding data..."
-                php artisan db:seed --class=DeploySeeder --force --no-interaction 2>/dev/null || log "Seed warning"
-            fi
-            log "App setup complete."
-            return 0
-        fi
-        sleep 2
-    done
-    log "WARNING: Could not migrate — check DATABASE_URL on web service"
-    return 1
-}
-
-setup_app &
-
-wait $NGINX_PID
+exec nginx -g 'daemon off;'
