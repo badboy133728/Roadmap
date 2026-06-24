@@ -30,7 +30,7 @@ fi
 
 PORT="${PORT:-8080}"
 
-sed "s/PORT_PLACEHOLDER/${PORT}/" /etc/nginx/sites-enabled/default.template > /etc/nginx/sites-enabled/default
+sed "s/PORT_PLACEHOLDER/${PORT}/g" /etc/nginx/site.conf.template > /etc/nginx/sites-enabled/default
 
 log "Caching config, routes, views..."
 php artisan config:cache 2>/dev/null || true

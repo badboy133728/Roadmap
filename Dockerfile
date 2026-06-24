@@ -30,7 +30,7 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction \
     && rm -rf node_modules \
     && chmod -R 775 storage bootstrap/cache
 
-COPY docker/nginx.conf /etc/nginx/sites-enabled/default.template
+COPY docker/nginx.conf /etc/nginx/site.conf.template
 RUN rm -f /etc/nginx/sites-enabled/default
 
 COPY docker/entrypoint.sh /entrypoint.sh
