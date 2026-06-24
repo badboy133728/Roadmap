@@ -28,7 +28,8 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction \
     && npm ci \
     && npm run build \
     && rm -rf node_modules \
-    && chmod -R 775 storage bootstrap/cache
+    && chown -R www-data:www-data storage bootstrap/cache \
+    && chmod -R ug+rwx storage bootstrap/cache
 
 COPY docker/nginx.conf /etc/nginx/site.conf.template
 RUN rm -f /etc/nginx/sites-enabled/default

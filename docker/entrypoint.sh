@@ -28,6 +28,9 @@ if [ -z "$APP_KEY" ] || [ "$APP_KEY" = "base64:" ]; then
     log "Generated APP_KEY — save to Railway variables!"
 fi
 
+export LOG_CHANNEL="${LOG_CHANNEL:-stderr}"
+export LOG_LEVEL="${LOG_LEVEL:-error}"
+
 PORT="${PORT:-8080}"
 
 sed "s/PORT_PLACEHOLDER/${PORT}/g" /etc/nginx/site.conf.template > /etc/nginx/sites-enabled/default
@@ -53,6 +56,10 @@ php artisan config:cache 2>/dev/null || true
 php artisan route:cache 2>/dev/null || true
 php artisan view:cache 2>/dev/null || true
 php artisan event:cache 2>/dev/null || true
+
+log "Fixing permissions for php-fpm (www-data)..."
+chown -R www-data:www-data storage bootstrap/cache
+chmod -R ug+rwx storage bootstrap/cache
 
 log "Starting php-fpm..."
 php-fpm -D

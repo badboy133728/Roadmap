@@ -33,6 +33,10 @@ class Handler extends ExceptionHandler
             return response()->view('errors.database', [], 503);
         }
 
+        if (! config('app.debug')) {
+            report($e);
+        }
+
         return parent::render($request, $e);
     }
 
