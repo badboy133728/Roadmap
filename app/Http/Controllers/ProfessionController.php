@@ -2,18 +2,16 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\City;
 use App\Models\Institution;
-use App\Models\JobPlatform;
 use App\Models\Profession;
-use App\Models\ProfessionCategory;
+use App\Services\CatalogService;
 use App\Services\CityService;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class ProfessionController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request, CatalogService $catalog): View
     {
         $search = $request->string('search')->trim()->toString();
         $categorySlug = $request->string('category')->trim()->toString();
@@ -36,27 +34,17 @@ class ProfessionController extends Controller
 
         return view('professions.index', [
             'professions' => $professions,
-            'categories' => ProfessionCategory::orderBy('name')->get(),
+            'categories' => $catalog->categories(),
             'search' => $search,
             'category' => $categorySlug,
         ]);
     }
 
-    public function show(Profession $profession, CityService $cityService): View
+    public function show(Profession $profession, CityService $cityService, CatalogService $catalog): View
     {
         abort_unless($profession->is_active, 404);
 
         $city = $cityService->current();
-
-        if ($city->id > 0) {
-            $cityModel = $city;
-        } else {
-            $cityModel = City::where('is_default', true)->first()
-                ?? City::first()
-                ?? $city;
-        }
-
-        $city = $cityModel;
 
         $profession->load(['category', 'careerPathSteps']);
 
@@ -72,7 +60,9 @@ class ProfessionController extends Controller
             ->orderBy('name')
             ->get();
 
-        $institutionCount = Institution::where('city_id', $city->id)->count();
+        $institutionCount = $institutions->isEmpty() && $city->id > 0
+            ? Institution::where('city_id', $city->id)->count()
+            : 0;
 
         $vacancies = $profession->jobVacancies()
             ->where('is_active', true)
@@ -83,13 +73,6 @@ class ProfessionController extends Controller
             ->limit(6)
             ->get();
 
-        $jobPlatforms = JobPlatform::query()
-            ->where('is_active', true)
-            ->orderBy('sort_order')
-            ->get();
-
-        $searchQuery = $profession->name . ' ' . $city->name;
-
         return view('professions.show', [
             'profession' => $profession,
             'city' => $city,
@@ -99,8 +82,8 @@ class ProfessionController extends Controller
             'institutions' => $institutions,
             'institutionCount' => $institutionCount,
             'vacancies' => $vacancies,
-            'jobPlatforms' => $jobPlatforms,
-            'searchQuery' => $searchQuery,
+            'jobPlatforms' => $catalog->jobPlatforms(),
+            'searchQuery' => $profession->name . ' ' . $city->name,
         ]);
     }
 }

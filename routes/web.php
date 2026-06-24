@@ -7,7 +7,9 @@ use App\Http\Controllers\HealthController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\ProfessionController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\QuizAiQuestionController;
 use App\Http\Controllers\QuizController;
+use App\Http\Controllers\QuizInsightController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -23,18 +25,20 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class);
 
-Route::get('/', [HomeController::class, 'index'])->name('home');
+Route::get('/', [HomeController::class, 'index'])->middleware('cache.public')->name('home');
 
 Route::post('/city/{slug}', [CityController::class, 'switch'])->name('city.switch');
 
-Route::get('/professions', [ProfessionController::class, 'index'])->name('professions.index');
-Route::get('/professions/{profession:slug}', [ProfessionController::class, 'show'])->name('professions.show');
+Route::get('/professions', [ProfessionController::class, 'index'])->middleware('cache.public')->name('professions.index');
+Route::get('/professions/{profession:slug}', [ProfessionController::class, 'show'])->middleware('cache.public')->name('professions.show');
 
-Route::get('/test', [QuizController::class, 'show'])->name('quiz.show');
+Route::get('/test', [QuizController::class, 'show'])->middleware('cache.public')->name('quiz.show');
+Route::post('/test/ai-questions', QuizAiQuestionController::class)->name('quiz.ai-questions');
 Route::post('/test', [QuizController::class, 'submit'])->name('quiz.submit');
+Route::get('/test/result/{sessionId}/insights', QuizInsightController::class)->name('quiz.insights');
 Route::get('/test/result/{sessionId}', [QuizController::class, 'result'])->name('quiz.result');
 
-Route::get('/career-change', [CareerChangeController::class, 'show'])->name('career-change.show');
+Route::get('/career-change', [CareerChangeController::class, 'show'])->middleware('cache.public')->name('career-change.show');
 Route::post('/career-change', [CareerChangeController::class, 'result'])->name('career-change.result');
 
 Route::middleware(['auth', 'verified'])->group(function () {

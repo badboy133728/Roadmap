@@ -3,6 +3,15 @@
 @section('title', 'Твой результат')
 
 @section('content')
+    @php
+        $professionNotes = collect($aiInsights['profession_notes'] ?? [])->keyBy('profession_name');
+        $isAiSource = ($aiInsights['source'] ?? '') === 'ai';
+        $archetypeService = app(\App\Services\PersonalityArchetypeService::class);
+        $archetypeSlug = $archetype['slug'] ?? 'trade';
+        $archetypeGradient = $archetypeService->gradientClass($archetypeSlug);
+        $archetypeGradientStyle = $archetypeService->gradientStyle($archetypeSlug);
+    @endphp
+
     <div class="mesh-bg min-h-[calc(100vh-4rem)]">
         <div class="page-container py-10 sm:py-14">
             <div class="max-w-2xl mx-auto">
@@ -12,14 +21,16 @@
                 @endif
 
                 @if ($archetype)
-                    <div class="relative overflow-hidden rounded-3xl p-6 sm:p-8 mb-8 text-white shadow-xl animate-slide-up bg-gradient-to-br {{ $archetype['color'] ?? 'from-brand-500 to-indigo-600' }}">
+                    <div class="relative overflow-hidden rounded-3xl p-6 sm:p-8 mb-8 text-white shadow-xl animate-slide-up {{ $archetypeGradient }}"
+                         style="{{ $archetypeGradientStyle }}">
                         <div class="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-white/10"></div>
-                        <div class="relative">
-                            <span class="text-5xl">{{ $archetype['emoji'] ?? '✨' }}</span>
-                            <p class="text-sm font-semibold text-white/80 mt-4 uppercase tracking-wider">Твой тип личности</p>
-                            <h1 class="text-2xl sm:text-3xl font-extrabold mt-1">{{ $archetype['title'] ?? 'Искатель' }}</h1>
-                            <p class="text-white/90 font-medium mt-2">{{ $archetype['tagline'] ?? '' }}</p>
-                            <p class="text-white/80 text-sm mt-3 leading-relaxed">{{ $archetype['description'] ?? '' }}</p>
+                        <div class="absolute inset-0 bg-black/5 pointer-events-none"></div>
+                        <div class="relative z-10">
+                            <span class="text-5xl drop-shadow-sm">{{ $archetype['emoji'] ?? '✨' }}</span>
+                            <p class="text-sm font-bold text-white/90 mt-4 uppercase tracking-wider">Твой тип личности</p>
+                            <h1 class="text-2xl sm:text-3xl font-extrabold mt-1 text-white drop-shadow-sm">{{ $archetype['title'] ?? 'Искатель' }}</h1>
+                            <p class="text-white/95 font-semibold mt-2 text-lg">{{ $archetype['tagline'] ?? '' }}</p>
+                            <p class="text-white/90 text-sm sm:text-base mt-3 leading-relaxed">{{ $archetype['description'] ?? '' }}</p>
                         </div>
                     </div>
                 @endif
@@ -45,18 +56,42 @@
                     </div>
                 @endif
 
+                @if (! empty($aiInsights['summary']))
+                    <div class="relative overflow-hidden rounded-2xl p-5 sm:p-6 mb-8 text-white shadow-lg bg-gradient-to-br from-violet-600 via-fuchsia-600 to-cyan-500 animate-slide-up">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-xl">✨</span>
+                            <span class="text-xs font-bold uppercase tracking-wider opacity-90">
+                                {{ $isAiSource ? 'ИИ-разбор' : 'Персональный разбор' }}
+                            </span>
+                        </div>
+                        <p class="text-sm sm:text-base leading-relaxed">{{ $aiInsights['summary'] }}</p>
+                        @if (! empty($aiInsights['motivation']))
+                            <p class="mt-3 text-sm font-bold">{{ $aiInsights['motivation'] }}</p>
+                        @endif
+                        <a href="#detailed-analysis" class="inline-block mt-4 text-xs font-bold underline opacity-90 hover:opacity-100">
+                            Читать полный разбор ↓
+                        </a>
+                    </div>
+                @endif
+
                 <h2 class="text-xl font-extrabold text-slate-900 mb-2 text-center">Твои топ-профессии</h2>
-                <p class="text-sm text-slate-500 text-center mb-6">Подобрано по ответам, приоритетам и твоему статусу</p>
+                <p class="text-sm text-slate-500 text-center mb-6">Подобрано по ответам, уточнениям и приоритетам</p>
 
                 <div class="space-y-4">
                     @foreach ($recommendations as $index => $item)
+                        @php
+                            $professionName = $item['profession_name'] ?? $item['name'] ?? 'Профессия';
+                            $note = $professionNotes->get($professionName);
+                        @endphp
                         <article class="youth-card p-5 sm:p-6 animate-slide-up group">
                             <div class="flex items-start gap-4">
                                 <div class="flex-shrink-0 text-center">
                                     <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-100 to-fuchsia-100 flex items-center justify-center text-2xl">
                                         {{ $item['category_icon'] ?? '💼' }}
                                     </div>
-                                    @if (isset($item['match_percent']))
+                                    @if ($note && ! empty($note['fit_score']))
+                                        <p class="text-xs font-extrabold text-brand-600 mt-1.5">{{ $note['fit_score'] }}%</p>
+                                    @elseif (isset($item['match_percent']))
                                         <p class="text-xs font-extrabold text-brand-600 mt-1.5">{{ $item['match_percent'] }}%</p>
                                     @endif
                                 </div>
@@ -68,18 +103,35 @@
                                         @endif
                                     </div>
                                     <h3 class="text-lg font-extrabold text-slate-900 group-hover:text-brand-700 transition">
-                                        {{ $item['profession_name'] ?? $item['name'] ?? 'Профессия' }}
+                                        {{ $professionName }}
                                     </h3>
 
-                                    @if (isset($item['match_percent']))
+                                    @php $matchPercent = $note['fit_score'] ?? $item['match_percent'] ?? null; @endphp
+                                    @if ($matchPercent)
                                         <div class="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                                             <div class="h-full bg-gradient-to-r from-brand-500 to-fuchsia-500 rounded-full"
-                                                 style="width: {{ $item['match_percent'] }}%"></div>
+                                                 style="width: {{ $matchPercent }}%"></div>
                                         </div>
                                     @endif
 
-                                    @if (! empty($item['reason']))
-                                        <p class="text-sm text-slate-600 mt-3 leading-relaxed">{{ $item['reason'] }}</p>
+                                    <p class="text-sm text-slate-600 mt-3 leading-relaxed">
+                                        {{ $note['note'] ?? $item['reason'] ?? '' }}
+                                    </p>
+
+                                    @if (! empty($note['pros']))
+                                        <div class="mt-3 flex flex-wrap gap-1.5">
+                                            @foreach ($note['pros'] as $pro)
+                                                <span class="text-xs bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full">+ {{ $pro }}</span>
+                                            @endforeach
+                                        </div>
+                                    @endif
+
+                                    @if (! empty($note['cons']))
+                                        <div class="mt-2 flex flex-wrap gap-1.5">
+                                            @foreach ($note['cons'] as $con)
+                                                <span class="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">− {{ $con }}</span>
+                                            @endforeach
+                                        </div>
                                     @endif
 
                                     <div class="mt-4 flex flex-wrap gap-2">
@@ -101,6 +153,104 @@
                         </article>
                     @endforeach
                 </div>
+
+                @if (! empty($aiInsights))
+                    <div id="detailed-analysis" class="mt-10 mb-8 animate-slide-up space-y-4 scroll-mt-8">
+                        <div class="text-center mb-2">
+                            <h2 class="text-xl font-extrabold text-slate-900">Подробный разбор</h2>
+                            <p class="text-sm text-slate-500">На основе теста и уточняющих вопросов</p>
+                        </div>
+
+                        @if (! empty($aiInsights['personality_traits']))
+                            <div class="youth-card p-5">
+                                <h3 class="font-extrabold text-slate-900 mb-3">🧠 Черты характера</h3>
+                                <div class="flex flex-wrap gap-2">
+                                    @foreach ($aiInsights['personality_traits'] as $trait)
+                                        <span class="text-xs font-semibold bg-violet-50 text-violet-700 px-3 py-1.5 rounded-full">{{ $trait }}</span>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
+
+                        @if (! empty($aiInsights['work_style']))
+                            <div class="youth-card p-5">
+                                <h3 class="font-extrabold text-slate-900 mb-2">💼 Стиль работы</h3>
+                                <p class="text-sm text-slate-600 leading-relaxed">{{ $aiInsights['work_style'] }}</p>
+                            </div>
+                        @endif
+
+                        <div class="grid sm:grid-cols-2 gap-4">
+                            @if (! empty($aiInsights['strengths']))
+                                <div class="youth-card p-5">
+                                    <h3 class="font-extrabold text-slate-900 mb-3">💪 Сильные стороны</h3>
+                                    <ul class="space-y-2">
+                                        @foreach ($aiInsights['strengths'] as $strength)
+                                            <li class="text-sm text-slate-600 flex gap-2"><span class="text-emerald-500">✓</span>{{ $strength }}</li>
+                                        @endforeach
+                                    </ul>
+                                </div>
+                            @endif
+                            @if (! empty($aiInsights['growth_areas']))
+                                <div class="youth-card p-5">
+                                    <h3 class="font-extrabold text-slate-900 mb-3">📈 Зоны роста</h3>
+                                    <ul class="space-y-2">
+                                        @foreach ($aiInsights['growth_areas'] as $area)
+                                            <li class="text-sm text-slate-600 flex gap-2"><span class="text-amber-500">→</span>{{ $area }}</li>
+                                        @endforeach
+                                    </ul>
+                                </div>
+                            @endif
+                        </div>
+
+                        @if (! empty($aiInsights['skills_to_learn']))
+                            <div class="youth-card p-5">
+                                <h3 class="font-extrabold text-slate-900 mb-3">🛠 Навыки для прокачки</h3>
+                                <div class="flex flex-wrap gap-2">
+                                    @foreach ($aiInsights['skills_to_learn'] as $skill)
+                                        <span class="text-xs font-semibold bg-brand-50 text-brand-700 px-3 py-1.5 rounded-full">{{ $skill }}</span>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
+
+                        @if (! empty($aiInsights['education_path']))
+                            <div class="youth-card p-5">
+                                <h3 class="font-extrabold text-slate-900 mb-2">🎓 Путь обучения</h3>
+                                <p class="text-sm text-slate-600 leading-relaxed">{{ $aiInsights['education_path'] }}</p>
+                            </div>
+                        @endif
+
+                        @if (! empty($aiInsights['first_steps']))
+                            <div class="youth-card p-5">
+                                <h3 class="font-extrabold text-slate-900 mb-3">🚀 Первые шаги на этой неделе</h3>
+                                <ol class="space-y-2">
+                                    @foreach ($aiInsights['first_steps'] as $i => $step)
+                                        <li class="flex items-start gap-2 text-sm text-slate-600">
+                                            <span class="flex-shrink-0 w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-bold flex items-center justify-center">{{ $i + 1 }}</span>
+                                            {{ $step }}
+                                        </li>
+                                    @endforeach
+                                </ol>
+                            </div>
+                        @endif
+
+                        @if (! empty($aiInsights['less_suitable']))
+                            <div class="youth-card p-5 bg-slate-50">
+                                <h3 class="font-extrabold text-slate-700 mb-3">⚠️ Пока менее подходит</h3>
+                                @foreach ($aiInsights['less_suitable'] as $item)
+                                    <p class="text-sm text-slate-600"><strong>{{ $item['area'] ?? '' }}</strong> — {{ $item['reason'] ?? '' }}</p>
+                                @endforeach
+                            </div>
+                        @endif
+
+                        @if (! empty($aiInsights['personal_advice']))
+                            <div class="youth-card p-5 border-l-4 border-violet-500">
+                                <h3 class="font-extrabold text-slate-900 mb-2">💬 Персональный совет</h3>
+                                <p class="text-sm text-slate-600 leading-relaxed">{{ $aiInsights['personal_advice'] }}</p>
+                            </div>
+                        @endif
+                    </div>
+                @endif
 
                 @if ($statusAdvice)
                     <div class="youth-card p-6 mt-8 animate-slide-up">

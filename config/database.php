@@ -45,12 +45,12 @@ return [
 
         'mysql' => [
             'driver' => 'mysql',
-            'url' => env('DATABASE_URL'),
-            'host' => env('DB_HOST', '127.0.0.1'),
-            'port' => env('DB_PORT', '3306'),
-            'database' => env('DB_DATABASE', 'forge'),
-            'username' => env('DB_USERNAME', 'forge'),
-            'password' => env('DB_PASSWORD', ''),
+            'url' => env('DATABASE_URL') ?: env('MYSQL_URL') ?: env('MYSQL_PRIVATE_URL'),
+            'host' => env('MYSQLHOST') ?: env('DB_HOST', '127.0.0.1'),
+            'port' => env('MYSQLPORT') ?: env('DB_PORT', '3306'),
+            'database' => env('MYSQLDATABASE') ?: env('MYSQL_DATABASE') ?: env('DB_DATABASE', 'forge'),
+            'username' => env('MYSQLUSER') ?: env('MYSQL_USER') ?: env('DB_USERNAME', 'forge'),
+            'password' => env('MYSQLPASSWORD') ?: env('MYSQL_PASSWORD') ?: env('DB_PASSWORD', ''),
             'unix_socket' => env('DB_SOCKET', ''),
             'charset' => 'utf8mb4',
             'collation' => 'utf8mb4_unicode_ci',
@@ -65,6 +65,10 @@ return [
                         FILTER_VALIDATE_BOOLEAN
                     ),
                 ];
+
+                if (env('APP_ENV') === 'production') {
+                    $options[PDO::ATTR_PERSISTENT] = true;
+                }
 
                 if ($ca = env('MYSQL_ATTR_SSL_CA')) {
                     $options[PDO::MYSQL_ATTR_SSL_CA] = $ca;

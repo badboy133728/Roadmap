@@ -28,23 +28,29 @@ if [ -z "$APP_KEY" ] || [ "$APP_KEY" = "base64:" ]; then
     log "Generated APP_KEY — save to Railway variables!"
 fi
 
-php artisan config:clear 2>/dev/null || true
-php artisan route:clear 2>/dev/null || true
-php artisan view:clear 2>/dev/null || true
-
 PORT="${PORT:-8080}"
 
-# artisan serve корректно отдаёт CSS/JS из public/build
-log "Starting server on 0.0.0.0:${PORT}..."
-php artisan serve --host=0.0.0.0 --port="${PORT}" &
-SERVER_PID=$!
+sed "s/PORT_PLACEHOLDER/${PORT}/" /etc/nginx/sites-enabled/default.template > /etc/nginx/sites-enabled/default
+
+log "Caching config, routes, views..."
+php artisan config:cache 2>/dev/null || true
+php artisan route:cache 2>/dev/null || true
+php artisan view:cache 2>/dev/null || true
+php artisan event:cache 2>/dev/null || true
+
+log "Starting php-fpm..."
+php-fpm -D
+
+log "Starting nginx on 0.0.0.0:${PORT}..."
+nginx -g 'daemon off;' &
+NGINX_PID=$!
 
 setup_app() {
     log "Waiting for database and running migrations..."
     for i in $(seq 1 90); do
         if php artisan migrate --force --no-interaction 2>/dev/null; then
             log "Migrations OK."
-            if [ "${RUN_SEEDERS:-true}" = "true" ]; then
+            if [ "${RUN_SEEDERS:-false}" = "true" ]; then
                 log "Seeding data..."
                 php artisan db:seed --class=DeploySeeder --force --no-interaction 2>/dev/null || log "Seed warning"
             fi
@@ -59,4 +65,4 @@ setup_app() {
 
 setup_app &
 
-wait $SERVER_PID
+wait $NGINX_PID

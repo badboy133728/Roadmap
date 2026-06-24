@@ -91,6 +91,22 @@ class PersonalityArchetypeService
         ],
     ];
 
+    private array $archetypeGradients = [
+        'it' => 'linear-gradient(to bottom right, #8b5cf6, #4f46e5)',
+        'medicine' => 'linear-gradient(to bottom right, #10b981, #0d9488)',
+        'engineering' => 'linear-gradient(to bottom right, #475569, #3f3f46)',
+        'education' => 'linear-gradient(to bottom right, #f59e0b, #f97316)',
+        'trade' => 'linear-gradient(to bottom right, #0ea5e9, #2563eb)',
+        'law' => 'linear-gradient(to bottom right, #4f46e5, #1e40af)',
+        'creative' => 'linear-gradient(to bottom right, #ec4899, #e11d48)',
+        'production' => 'linear-gradient(to bottom right, #f97316, #d97706)',
+        'transport' => 'linear-gradient(to bottom right, #06b6d4, #2563eb)',
+        'security' => 'linear-gradient(to bottom right, #334155, #0f172a)',
+        'beauty' => 'linear-gradient(to bottom right, #d946ef, #9333ea)',
+        'science' => 'linear-gradient(to bottom right, #14b8a6, #047857)',
+        'default' => 'linear-gradient(to bottom right, #3b6cf4, #4f46e5)',
+    ];
+
     private array $interestLabels = [
         'it' => 'Технологии',
         'medicine' => 'Медицина',
@@ -109,7 +125,7 @@ class PersonalityArchetypeService
     public function resolve(array $interestScores): array
     {
         if (empty($interestScores)) {
-            return $this->archetypes['trade'];
+            return array_merge(['slug' => 'trade'], $this->archetypes['trade']);
         }
 
         arsort($interestScores);
@@ -119,6 +135,25 @@ class PersonalityArchetypeService
             ['slug' => $topSlug],
             $this->archetypes[$topSlug] ?? $this->archetypes['trade']
         );
+    }
+
+    public function gradientClass(?string $slug): string
+    {
+        $slug = $slug ?: 'trade';
+
+        if (isset($this->archetypes[$slug])) {
+            return 'archetype-gradient-' . $slug;
+        }
+
+        return 'archetype-gradient-default';
+    }
+
+    public function gradientStyle(?string $slug): string
+    {
+        $slug = $slug ?: 'trade';
+        $gradient = $this->archetypeGradients[$slug] ?? $this->archetypeGradients['default'];
+
+        return 'background-image: ' . $gradient;
     }
 
     public function interestProfile(array $interestScores, int $limit = 5): array

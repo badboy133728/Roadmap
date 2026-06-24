@@ -10,7 +10,6 @@ class HomeController extends Controller
     public function index(CityService $cityService): View
     {
         return view('home', [
-            'cities' => $cityService->all(),
             'currentCity' => $cityService->current(),
         ]);
     }

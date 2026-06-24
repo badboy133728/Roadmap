@@ -8,16 +8,13 @@
     <title>@yield('title', 'Курс на развитие') — {{ config('app.name', 'Курс на развитие') }}</title>
     <meta name="description" content="@yield('meta_description', 'Курс на развитие — карьерный навигатор: выбери профессию, узнай зарплату в своём городе, пройди тест и построй путь к цели.')">
 
-    <link rel="preconnect" href="https://fonts.bunny.net">
-    <link href="https://fonts.bunny.net/css?family=figtree:400,500,600,700,800&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.bunny.net" crossorigin>
+    <link rel="preload" href="https://fonts.bunny.net/css?family=figtree:400,600,700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link href="https://fonts.bunny.net/css?family=figtree:400,600,700&display=swap" rel="stylesheet"></noscript>
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="font-sans antialiased min-h-screen flex flex-col">
-    @php
-        $currentCity = $currentCity ?? ($city ?? null) ?? app(\App\Services\CityService::class)->current();
-    @endphp
-
     <header class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200/80">
         <div class="page-container">
             <div class="flex items-center justify-between gap-4 h-16">

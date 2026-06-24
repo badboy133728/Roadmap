@@ -2,22 +2,18 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Profession;
 use App\Services\CareerTransitionService;
+use App\Services\CatalogService;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class CareerChangeController extends Controller
 {
-    public function show(): View
+    public function show(CatalogService $catalog): View
     {
-        $professions = Profession::query()
-            ->with('category')
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get();
-
-        return view('career-change.show', compact('professions'));
+        return view('career-change.show', [
+            'professions' => $catalog->professionOptions(),
+        ]);
     }
 
     public function result(Request $request, CareerTransitionService $transitionService): View

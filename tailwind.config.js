@@ -51,4 +51,21 @@ export default {
     },
 
     plugins: [forms],
+
+    safelist: [
+        'archetype-gradient-it',
+        'archetype-gradient-medicine',
+        'archetype-gradient-engineering',
+        'archetype-gradient-education',
+        'archetype-gradient-trade',
+        'archetype-gradient-law',
+        'archetype-gradient-creative',
+        'archetype-gradient-production',
+        'archetype-gradient-transport',
+        'archetype-gradient-security',
+        'archetype-gradient-beauty',
+        'archetype-gradient-science',
+        'archetype-gradient-default',
+        'mesh-bg',
+    ],
 };

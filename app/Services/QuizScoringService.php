@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Profession;
 use App\Models\Quiz;
 use App\Models\QuizOption;
+use Illuminate\Support\Collection;
 
 class QuizScoringService
 {
@@ -24,20 +25,21 @@ class QuizScoringService
     ];
 
     public function __construct(
-        private PersonalityArchetypeService $archetypeService
+        private PersonalityArchetypeService $archetypeService,
+        private CatalogService $catalog,
     ) {}
 
-    public function score(Quiz $quiz, array $answers, array $profile = []): array
+    public function score(Quiz $quiz, array $answers, array $profile = [], array $aiAnswers = [], array $aiQuestions = []): array
     {
         $interestScores = [];
         $professionScores = [];
 
-        foreach ($answers as $questionId => $optionId) {
-            $option = QuizOption::where('quiz_question_id', $questionId)
-                ->where('id', $optionId)
-                ->first();
+        $options = $this->loadOptions($answers);
 
-            if (! $option) {
+        foreach ($answers as $questionId => $optionId) {
+            $option = $options->get((int) $optionId);
+
+            if (! $option || $option->quiz_question_id != $questionId) {
                 continue;
             }
 
@@ -50,34 +52,113 @@ class QuizScoringService
             }
         }
 
+        [$interestScores, $professionScores] = $this->applyAiAnswers(
+            $aiQuestions,
+            $aiAnswers,
+            $interestScores,
+            $professionScores,
+        );
+
+        return $this->finalizeScore($interestScores, $professionScores, $profile);
+    }
+
+    public function scoreAdaptive(
+        array $profile,
+        array $staticQuestions,
+        array $staticAnswers,
+        array $aiQuestions,
+        array $aiAnswers,
+    ): array {
+        [$interestScores, $professionScores] = $this->accumulateScores(
+            $staticQuestions,
+            $staticAnswers,
+            $aiQuestions,
+            $aiAnswers,
+        );
+
+        return $this->finalizeScore($interestScores, $professionScores, $profile);
+    }
+
+    public function accumulateScores(
+        array $staticQuestions,
+        array $staticAnswers,
+        array $aiQuestions,
+        array $aiAnswers,
+    ): array {
+        $interestScores = [];
+        $professionScores = [];
+
+        foreach ($staticQuestions as $question) {
+            $questionId = $question['id'] ?? null;
+            $selectedId = $staticAnswers[$questionId] ?? null;
+
+            if (! $questionId || ! $selectedId) {
+                continue;
+            }
+
+            $option = collect($question['options'] ?? [])
+                ->first(fn ($item) => ($item['id'] ?? null) === $selectedId);
+
+            if ($option) {
+                $this->mergeOptionScores($option, $interestScores, $professionScores);
+            }
+        }
+
+        return $this->applyAiAnswers($aiQuestions, $aiAnswers, $interestScores, $professionScores);
+    }
+
+    public function buildPreview(array $scores, array $profile): array
+    {
+        [$interestScores, $professionScores] = $scores;
         $interestScores = $this->applyPersonalizationBoosts($interestScores, $profile);
 
-        $professions = Profession::with('category')->where('is_active', true)->get();
+        $professions = $this->catalog->activeProfessions();
+        $ranked = $this->rankProfessions($professions, $professionScores, $interestScores, $profile);
+        $maxScore = $ranked->max('score') ?: 1;
 
-        $ranked = $professions->map(function (Profession $profession) use ($professionScores, $interestScores, $profile) {
-            $directScore = $professionScores[$profession->slug] ?? 0;
-            $categoryScore = $interestScores[$profession->category?->slug ?? ''] ?? 0;
-            $score = $directScore + ($categoryScore * 0.5);
+        return [
+            'interest_scores' => $interestScores,
+            'interest_profile' => $this->archetypeService->interestProfile($interestScores),
+            'archetype' => $this->archetypeService->resolve($interestScores),
+            'clarity' => $this->assessClarity($interestScores),
+            'recommendations' => $ranked->take(5)->map(fn ($item) => [
+                'profession_id' => $item['profession']->id,
+                'profession_slug' => $item['profession']->slug,
+                'profession_name' => $item['profession']->name,
+                'category_name' => $item['profession']->category?->name,
+                'category_icon' => $item['profession']->category?->icon,
+                'score' => round($item['score'], 1),
+                'match_percent' => $this->archetypeService->matchPercent($item['score'], $maxScore),
+                'reason' => $item['reason'],
+            ])->all(),
+        ];
+    }
 
-            return [
-                'profession' => $profession,
-                'score' => $score,
-                'reason' => $this->buildReason($profession, $directScore, $categoryScore, $profile),
-            ];
-        })
-            ->sortByDesc('score')
-            ->take(8)
-            ->values();
-
-        if ($ranked->first()['score'] <= 0) {
-            $ranked = $professions->shuffle()->take(5)->map(fn ($profession) => [
-                'profession' => $profession,
-                'score' => 1,
-                'reason' => 'Эта профессия популярна среди ребят твоего возраста — загляни подробнее.',
-            ]);
-        } else {
-            $ranked = $ranked->filter(fn ($item) => $item['score'] > 0)->take(5)->values();
+    public function assessClarity(array $interestScores): int
+    {
+        if ($interestScores === []) {
+            return 20;
         }
+
+        $sorted = $interestScores;
+        arsort($sorted);
+        $values = array_values($sorted);
+        $top = $values[0] ?? 0;
+        $second = $values[1] ?? 0;
+        $total = array_sum($values) ?: 1;
+
+        $topShare = ($top / $total) * 100;
+        $gap = $top - $second;
+
+        return (int) min(100, max(15, round($topShare * 0.65 + $gap * 4)));
+    }
+
+    private function finalizeScore(array $interestScores, array $professionScores, array $profile): array
+    {
+        $interestScores = $this->applyPersonalizationBoosts($interestScores, $profile);
+
+        $professions = $this->catalog->activeProfessions();
+        $ranked = $this->rankProfessions($professions, $professionScores, $interestScores, $profile);
 
         $maxScore = $ranked->max('score') ?: 1;
         $archetype = $this->archetypeService->resolve($interestScores);
@@ -107,6 +188,80 @@ class QuizScoringService
                 'reason' => $item['reason'],
             ])->all(),
         ];
+    }
+
+    private function rankProfessions($professions, array $professionScores, array $interestScores, array $profile)
+    {
+        $ranked = $professions->map(function (Profession $profession) use ($professionScores, $interestScores, $profile) {
+            $directScore = $professionScores[$profession->slug] ?? 0;
+            $categoryScore = $interestScores[$profession->category?->slug ?? ''] ?? 0;
+            $score = $directScore + ($categoryScore * 0.5);
+
+            return [
+                'profession' => $profession,
+                'score' => $score,
+                'reason' => $this->buildReason($profession, $directScore, $categoryScore, $profile),
+            ];
+        })
+            ->sortByDesc('score')
+            ->take(8)
+            ->values();
+
+        if ($ranked->first()['score'] <= 0) {
+            return $professions->shuffle()->take(5)->map(fn ($profession) => [
+                'profession' => $profession,
+                'score' => 1,
+                'reason' => 'Эта профессия популярна среди ребят твоего возраста — загляни подробнее.',
+            ]);
+        }
+
+        return $ranked->filter(fn ($item) => $item['score'] > 0)->take(5)->values();
+    }
+
+    private function mergeOptionScores(array $option, array &$interestScores, array &$professionScores): void
+    {
+        foreach ($option['interest_scores'] ?? [] as $slug => $points) {
+            $interestScores[$slug] = ($interestScores[$slug] ?? 0) + $points;
+        }
+
+        foreach ($option['profession_scores'] ?? [] as $slug => $points) {
+            $professionScores[$slug] = ($professionScores[$slug] ?? 0) + $points;
+        }
+    }
+
+    private function loadOptions(array $answers): Collection
+    {
+        if ($answers === []) {
+            return collect();
+        }
+
+        return QuizOption::query()
+            ->whereIn('id', array_map('intval', array_values($answers)))
+            ->get()
+            ->keyBy('id');
+    }
+
+    private function applyAiAnswers(array $aiQuestions, array $aiAnswers, array $interestScores, array $professionScores): array
+    {
+        foreach ($aiQuestions as $question) {
+            $questionId = $question['id'] ?? null;
+            $selectedId = $aiAnswers[$questionId] ?? null;
+
+            if (! $questionId || ! $selectedId) {
+                continue;
+            }
+
+            $option = collect($question['options'] ?? [])
+                ->first(fn ($item) => ($item['id'] ?? null) === $selectedId);
+
+            if (! $option) {
+                continue;
+            }
+
+            $this->mergeOptionScores($option, $interestScores, $professionScores);
+        }
+
+        return [$interestScores, $professionScores];
     }
 
     private function applyPersonalizationBoosts(array $interestScores, array $profile): array

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\City;
 use App\Models\Profession;
+use App\Services\CatalogService;
 use App\Services\CityService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,7 +17,7 @@ class DashboardController extends Controller
         $this->middleware(['auth', 'verified']);
     }
 
-    public function index(): View
+    public function index(CityService $cityService, CatalogService $catalog): View
     {
         $user = auth()->user()->load([
             'favoriteProfessions.category',
@@ -32,8 +33,8 @@ class DashboardController extends Controller
             'favorites' => $user->favoriteProfessions,
             'quizHistory' => $user->quizResults,
             'savedPaths' => $user->savedPaths,
-            'cities' => City::query()->orderByDesc('is_default')->orderBy('name')->get(),
-            'professions' => Profession::query()->where('is_active', true)->orderBy('name')->get(),
+            'cities' => $cityService->all(),
+            'professions' => $catalog->professionOptions(),
         ]);
     }
 

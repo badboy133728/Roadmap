@@ -14,12 +14,26 @@
 
 @layer components {
     .mesh-bg {
-        background-color: #f8fafc;
+        background-color: #f1f5f9;
         background-image:
-            radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.08) 0px, transparent 50%),
-            radial-gradient(at 100% 0%, rgba(6, 182, 212, 0.08) 0px, transparent 50%),
-            radial-gradient(at 50% 100%, rgba(217, 70, 239, 0.06) 0px, transparent 50%);
+            radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.14) 0px, transparent 55%),
+            radial-gradient(at 100% 0%, rgba(6, 182, 212, 0.12) 0px, transparent 55%),
+            radial-gradient(at 50% 100%, rgba(217, 70, 239, 0.10) 0px, transparent 55%);
     }
+
+    .archetype-gradient-it { background-image: linear-gradient(to bottom right, #8b5cf6, #4f46e5); }
+    .archetype-gradient-medicine { background-image: linear-gradient(to bottom right, #10b981, #0d9488); }
+    .archetype-gradient-engineering { background-image: linear-gradient(to bottom right, #475569, #3f3f46); }
+    .archetype-gradient-education { background-image: linear-gradient(to bottom right, #f59e0b, #f97316); }
+    .archetype-gradient-trade { background-image: linear-gradient(to bottom right, #0ea5e9, #2563eb); }
+    .archetype-gradient-law { background-image: linear-gradient(to bottom right, #4f46e5, #1e40af); }
+    .archetype-gradient-creative { background-image: linear-gradient(to bottom right, #ec4899, #e11d48); }
+    .archetype-gradient-production { background-image: linear-gradient(to bottom right, #f97316, #d97706); }
+    .archetype-gradient-transport { background-image: linear-gradient(to bottom right, #06b6d4, #2563eb); }
+    .archetype-gradient-security { background-image: linear-gradient(to bottom right, #334155, #0f172a); }
+    .archetype-gradient-beauty { background-image: linear-gradient(to bottom right, #d946ef, #9333ea); }
+    .archetype-gradient-science { background-image: linear-gradient(to bottom right, #14b8a6, #047857); }
+    .archetype-gradient-default { background-image: linear-gradient(to bottom right, #3b6cf4, #4f46e5); }
 
     .youth-card {
         @apply bg-white/90 backdrop-blur-sm rounded-2xl border border-white shadow-card;
