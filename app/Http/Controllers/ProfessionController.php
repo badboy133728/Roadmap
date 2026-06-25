@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Institution;
 use App\Models\Profession;
+use App\Services\CareerPathService;
 use App\Services\CatalogService;
 use App\Services\CityService;
 use Illuminate\Http\Request;
@@ -40,7 +41,7 @@ class ProfessionController extends Controller
         ]);
     }
 
-    public function show(Profession $profession, CityService $cityService, CatalogService $catalog): View
+    public function show(Profession $profession, CityService $cityService, CatalogService $catalog, CareerPathService $careerPathService): View
     {
         abort_unless($profession->is_active, 404);
 
@@ -73,11 +74,25 @@ class ProfessionController extends Controller
             ->limit(6)
             ->get();
 
+        $pathData = $careerPathService->forProfession(
+            $profession,
+            auth()->user(),
+            $city,
+            $vacancies,
+            $institutions,
+        );
+
         return view('professions.show', [
             'profession' => $profession,
             'city' => $city,
             'pathSteps' => $profession->careerPathSteps,
-            'steps' => $profession->careerPathSteps,
+            'steps' => $pathData['steps'],
+            'pathSummary' => $pathData['summary'] ?? null,
+            'pathPersonalized' => $pathData['personalized'] ?? false,
+            'pathSource' => $pathData['source'] ?? 'static',
+            'pathHint' => $pathData['hint'] ?? null,
+            'pathTransition' => $pathData['transition'] ?? null,
+            'pathTotalLabel' => $pathData['total_years_label'] ?? null,
             'salaries' => $salaries,
             'institutions' => $institutions,
             'institutionCount' => $institutionCount,

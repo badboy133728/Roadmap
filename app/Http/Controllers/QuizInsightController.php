@@ -18,7 +18,7 @@ class QuizInsightController extends Controller
 
         $cached = $payload['ai_insights'] ?? null;
 
-        if ($aiService->isCompleteInsights($cached)) {
+        if ($aiService->isCompleteInsights($cached, $payload['profile'] ?? null)) {
             return response()->json($cached);
         }
 

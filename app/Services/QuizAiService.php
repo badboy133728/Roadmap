@@ -10,6 +10,12 @@ use Illuminate\Support\Facades\Log;
 
 class QuizAiService
 {
+    public function __construct(
+        private CatalogService $catalog,
+        private CityService $cities,
+        private QuizProfileService $profiles,
+    ) {}
+
     private array $statusLabels = [
         'school_9' => 'учится в 9 классе',
         'school_11' => 'учится в 10–11 классе',
@@ -35,15 +41,23 @@ class QuizAiService
         return filled(config('ai.openai.api_key'));
     }
 
-    public function isCompleteInsights(?array $insights): bool
+    public function isCompleteInsights(?array $insights, ?array $profile = null): bool
     {
         if (! $insights) {
             return false;
         }
 
-        return ! empty($insights['summary'])
-            && isset($insights['personality_traits'])
-            && isset($insights['first_steps']);
+        if (empty($insights['summary'])
+            || ! isset($insights['personality_traits'])
+            || ! isset($insights['first_steps'])) {
+            return false;
+        }
+
+        if (! empty($profile['account']['is_registered']) && ! array_key_exists('vacancy_examples', $insights)) {
+            return false;
+        }
+
+        return true;
     }
 
     public function buildQuizContext(Quiz $quiz, array $answers, array $profile, array $preview, array $aiAnswers = [], array $aiQuestions = []): array
@@ -95,7 +109,7 @@ class QuizAiService
         $aiHighlights = $this->buildAiAnswerHighlights($aiQuestions, $aiAnswers);
         $clarity = $preview['clarity'] ?? 50;
 
-        return [
+        return $this->enrichContextWithPersonalization([
             'name' => $profile['name'] ?? null,
             'status' => $profile['status'] ?? 'exploring',
             'status_label' => $this->statusLabels[$profile['status'] ?? 'exploring'] ?? 'ищет направление',
@@ -116,7 +130,113 @@ class QuizAiService
             'ai_answer_highlights' => $aiHighlights,
             'ai_questions' => $aiQuestions,
             'already_asked' => collect($aiQuestions)->pluck('question')->filter()->values()->all(),
+        ], $profile);
+    }
+
+    private function enrichContextWithPersonalization(array $context, array $profile): array
+    {
+        $city = $this->cities->current();
+
+        if (! empty($profile['account']['city_id'])) {
+            $city = (object) [
+                'id' => $profile['account']['city_id'],
+                'name' => $profile['account']['city_name'] ?? $city->name,
+                'region' => $profile['account']['city_region'] ?? $city->region,
+            ];
+        }
+
+        $context['city'] = [
+            'id' => $city->id,
+            'name' => $city->name,
+            'region' => $city->region,
         ];
+        $context['account'] = $profile['account'] ?? null;
+        $context['vacancy_samples'] = $this->catalog->vacanciesForRecommendations(
+            $context['recommendations'] ?? [],
+            (int) $city->id,
+        );
+
+        return $context;
+    }
+
+    private function formatAccountBlock(array $context): string
+    {
+        $account = $context['account'] ?? null;
+
+        if (! is_array($account) || empty($account['is_registered'])) {
+            return '';
+        }
+
+        $lines = ['Зарегистрированный пользователь (данные из профиля):'];
+
+        if (! empty($account['city_name'])) {
+            $lines[] = 'Город: ' . $account['city_name']
+                . (! empty($account['city_region']) ? ' (' . $account['city_region'] . ')' : '');
+        }
+
+        if (! empty($account['current_profession'])) {
+            $lines[] = 'Текущая/указанная профессия в профиле: ' . $account['current_profession'];
+        }
+
+        if (! empty($account['favorite_professions'])) {
+            $lines[] = 'Избранные профессии: ' . implode(', ', $account['favorite_professions']);
+        }
+
+        if (! empty($account['email'])) {
+            $lines[] = 'Email: ' . $account['email'];
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function formatVacanciesBlock(array $context): string
+    {
+        $samples = $context['vacancy_samples'] ?? [];
+
+        if ($samples === []) {
+            return 'Актуальные вакансии в базе: пока нет примеров для этого города.';
+        }
+
+        return "Актуальные вакансии в базе (используй в примерах и first_steps, не выдумывай другие):\n"
+            . collect($samples)
+                ->map(function ($item) {
+                    $salary = $item['salary_text'] ? ', ' . $item['salary_text'] : '';
+
+                    return '- [' . ($item['profession_name'] ?? 'Профессия') . '] '
+                        . ($item['title'] ?? '') . ' — ' . ($item['company'] ?? 'компания не указана')
+                        . $salary;
+                })
+                ->implode("\n");
+    }
+
+    private function normalizeVacancyExamples(array $fromAi, array $context): array
+    {
+        $samples = collect($context['vacancy_samples'] ?? []);
+
+        if ($samples->isEmpty()) {
+            return [];
+        }
+
+        $aiByTitle = collect($fromAi)
+            ->filter(fn ($item) => is_array($item) && ! empty($item['title']))
+            ->keyBy(fn ($item) => mb_strtolower(trim((string) $item['title'])));
+
+        return $samples->map(function ($sample) use ($aiByTitle) {
+            $key = mb_strtolower(trim((string) ($sample['title'] ?? '')));
+            $aiNote = $aiByTitle->get($key);
+
+            return [
+                'profession_name' => $sample['profession_name'] ?? '',
+                'profession_slug' => $sample['profession_slug'] ?? '',
+                'title' => $sample['title'] ?? '',
+                'company' => $sample['company'] ?? '',
+                'salary_text' => $sample['salary_text'] ?? '',
+                'experience_level' => $sample['experience_level'] ?? '',
+                'external_url' => $sample['external_url'] ?? '',
+                'why_relevant' => trim((string) ($aiNote['why_relevant'] ?? $aiNote['note'] ?? ''))
+                    ?: 'Актуальная вакансия в твоём городе по направлению «' . ($sample['profession_name'] ?? '') . '».',
+            ];
+        })->values()->all();
     }
 
     public function generateAdaptiveQuestions(array $context): array
@@ -217,6 +337,13 @@ class QuizAiService
             'interest_scores' => $payload['interest_scores'] ?? [],
             'recommendations' => $payload['list'] ?? [],
         ];
+
+        if ($result->user) {
+            $profile = $this->profiles->mergeUser(
+                $profile,
+                $result->user->loadMissing(['city', 'currentProfession', 'favoriteProfessions']),
+            );
+        }
 
         return $this->buildAdaptiveContext(
             $profile,
@@ -331,6 +458,11 @@ class QuizAiService
 
         $clarity = $context['clarity'] ?? 50;
         $round = ($context['round'] ?? 0) + 1;
+        $accountBlock = $this->formatAccountBlock($context);
+        $cityLine = ! empty($context['city']['name'])
+            ? 'Город для подбора: ' . $context['city']['name']
+            : '';
+        $accountSection = $accountBlock !== '' ? "\n{$accountBlock}\n" : '';
 
         return <<<PROMPT
 Оцени, насколько ясны интересы человека (clarity 0–100). Сейчас clarity ≈ {$clarity}.
@@ -338,8 +470,10 @@ class QuizAiService
 
 {$name}
 Статус: {$context['status_label']}
+{$cityLine}
 {$priorities}
 {$about}
+{$accountSection}
 Интересы: {$interests}
 
 Предварительный топ профессий:
@@ -385,6 +519,7 @@ JSON:
 - interest_scores: it, medicine, engineering, education, trade, law, creative, production, transport, security, beauty, science
 - profession_scores по желанию
 - Вопросы персональные, не дублируй уже заданные
+- Если есть данные профиля — учитывай город и текущую профессию при уточнении
 PROMPT;
     }
 
@@ -840,18 +975,32 @@ PROMPT;
             ->map(fn ($item) => "- [уточнение] {$item['question']} → {$item['answer']}")
             ->implode("\n");
 
+        $accountBlock = $this->formatAccountBlock($context);
+        $vacanciesBlock = $this->formatVacanciesBlock($context);
+        $cityLine = ! empty($context['city']['name'])
+            ? 'Город: ' . $context['city']['name'] . (! empty($context['city']['region']) ? ' (' . $context['city']['region'] . ')' : '')
+            : '';
+        $accountSection = $accountBlock !== '' ? "\n{$accountBlock}\n" : '';
+        $registeredHint = ! empty($context['account']['is_registered'])
+            ? "\nЭто зарегистрированный пользователь — путь к профессии должен быть конкретнее: учитывай город, текущую профессию из профиля и реальные вакансии ниже.\n"
+            : '';
+
         return <<<PROMPT
 Сделай ПОДРОБНЫЙ персональный профориентационный разбор.
 
 {$name}
 Статус: {$context['status_label']}
+{$cityLine}
 {$priorities}
 {$about}
+{$accountSection}{$registeredHint}
 {$archetypeLine}
 Интерес-профиль: {$interests}
 
 Топ-профессии:
 {$professions}
+
+{$vacanciesBlock}
 
 Ответы на 2 базовых вопроса:
 {$answers}
@@ -876,16 +1025,25 @@ PROMPT;
       "fit_score": 85
     }
   ],
+  "vacancy_examples": [
+    {
+      "profession_name": "из списка вакансий",
+      "title": "точное название вакансии из списка",
+      "why_relevant": "1-2 предложения — почему эта вакансия подходит этому человеку"
+    }
+  ],
   "less_suitable": [
     {"area": "сфера или тип работы", "reason": "почему менее подходит"}
   ],
-  "education_path": "2-3 предложения — колледж/вуз/курсы с учётом статуса",
+  "education_path": "2-3 предложения — колледж/вуз/курсы с учётом статуса и города",
   "first_steps": ["конкретный шаг 1", "шаг 2", "шаг 3", "шаг 4", "шаг 5"],
   "personal_advice": "развёрнутый совет на 3-4 предложения",
   "motivation": "мотивирующая фраза"
 }
 
 profession_notes — для каждой профессии из топ-списка. fit_score 55-99.
+vacancy_examples — 2-4 вакансии ТОЛЬКО из списка «Актуальные вакансии» выше; не придумывай компании и зарплаты.
+В first_steps включи хотя бы один шаг с реальной вакансией из списка (название + компания).
 PROMPT;
     }
 
@@ -933,6 +1091,7 @@ PROMPT;
             'first_steps' => $this->stringList($decoded['first_steps'] ?? []),
             'personal_advice' => trim((string) ($decoded['personal_advice'] ?? '')),
             'motivation' => trim((string) ($decoded['motivation'] ?? '')),
+            'vacancy_examples' => $this->normalizeVacancyExamples($decoded['vacancy_examples'] ?? [], $context),
         ];
     }
 
@@ -975,6 +1134,18 @@ PROMPT;
             $summaryParts[] = "На уточняющие вопросы ты ответил(а), в том числе: «{$aiSample}» — это уточнило подбор.";
         }
 
+        if (! empty($context['account']['is_registered'])) {
+            $cityName = $context['city']['name'] ?? $context['account']['city_name'] ?? null;
+            if ($cityName) {
+                $summaryParts[] = "Учитываем твой профиль и город {$cityName} — рекомендации привязаны к региону.";
+            }
+            if (! empty($context['account']['current_profession'])) {
+                $summaryParts[] = 'Сейчас в профиле указана профессия «'
+                    . $context['account']['current_profession']
+                    . '» — разбор учитывает возможный переход или развитие.';
+            }
+        }
+
         $workStyle = match (true) {
             in_array('creativity', $context['priorities'] ?? [], true) => 'Тебе важна свобода и возможность проявлять себя — ищи проекты, где есть пространство для идей, а не только регламент.',
             in_array('stability', $context['priorities'] ?? [], true) => 'Тебе комфортнее, когда правила ясны и есть понятный карьерный трек — обрати внимание на профессии с прозрачной квалификацией.',
@@ -1011,6 +1182,7 @@ PROMPT;
             'motivation' => $name
                 ? "{$name}, у тебя уже есть зацепки — исследуй топ-3 профессии на этой неделе!"
                 : 'У тебя уже есть зацепки — исследуй топ-3 профессии на этой неделе!',
+            'vacancy_examples' => $this->normalizeVacancyExamples([], $context),
         ];
     }
 
@@ -1062,30 +1234,52 @@ PROMPT;
 
     private function localEducationPath(array $context): string
     {
+        $city = $context['city']['name'] ?? null;
+        $citySuffix = $city ? " в {$city}" : ' в своём городе';
+
         return match ($context['status']) {
             'school_9' => 'Рассмотри колледж по топ-профессии — это быстрый старт. Параллельно сравни 10 класс, если планируешь вуз.',
-            'school_11' => 'Определи предметы ЕГЭ под 1–2 профессии из списка и подбери вузы/колледжи в своём городе.',
-            'student' => 'Если специальность не зашла — смотри смежные курсы и стажировки, не обязательно начинать с нуля.',
+            'school_11' => 'Определи предметы ЕГЭ под 1–2 профессии из списка и подбери вузы/колледжи' . $citySuffix . '.',
+            'student' => 'Если специальность не зашла — смотри смежные курсы и стажировки' . $citySuffix . ', не обязательно начинать с нуля.',
             'working' => 'Короткие курсы + портфолио/пет-проект часто эффективнее второго высшего.',
-            default => 'Начни с бесплатных курсов и дня открытых дверей — так поймёшь, заходит ли сфера.',
+            default => 'Начни с бесплатных курсов и дня открытых дверей' . $citySuffix . ' — так поймёшь, заходит ли сфера.',
         };
     }
 
     private function localFirstSteps(array $context): array
     {
         $top = $context['recommendations'][0]['profession_name'] ?? 'топ-профессию';
-
-        return [
+        $city = $context['city']['name'] ?? 'своём городе';
+        $steps = [
             "Открой карточку «{$top}» и изучи дорожную карту",
-            'Посмотри зарплаты в своём городе',
-            'Загляни в раздел «Где учиться»',
-            'Найди 2–3 вакансии для понимания требований',
-            'Сохрани этот результат и вернись через неделю',
         ];
+
+        $vacancy = ($context['vacancy_samples'] ?? [])[0] ?? null;
+        if ($vacancy) {
+            $salary = $vacancy['salary_text'] ? ' — ' . $vacancy['salary_text'] : '';
+            $steps[] = 'Изучи вакансию «' . $vacancy['title'] . '» в ' . $vacancy['company'] . $salary;
+        } else {
+            $steps[] = "Посмотри зарплаты в {$city}";
+        }
+
+        $steps[] = 'Загляни в раздел «Где учиться»';
+        $steps[] = 'Найди 2–3 вакансии для понимания требований';
+        $steps[] = 'Сохрани этот результат и вернись через неделю';
+
+        return $steps;
     }
 
     private function localPersonalAdvice(array $context): string
     {
+        $city = $context['city']['name'] ?? null;
+        $current = $context['account']['current_profession'] ?? null;
+
+        if ($current && ! empty($context['account']['is_registered'])) {
+            return "Ты уже указал(а) в профиле «{$current}»"
+                . ($city ? " и живёшь в {$city}" : '')
+                . ' — сравни топ-профессии из теста со своей текущей траекторией: возможно, стоит развиваться в смежном направлении, а не начинать с нуля.';
+        }
+
         return match ($context['status']) {
             'school_9' => 'Не торопись «навсегда» выбрать профессию — сейчас задача сузить круг до 2–3 направлений и попробовать их на практике (кружки, профориентация, визит в колледж).',
             'school_11' => 'Свяжи выбор профессии с предметами ЕГЭ уже сейчас — это сэкономит годы. Топ-3 из результата сравни по пути, деньгам и учёбе.',

@@ -8,6 +8,7 @@ Alpine.data('quizWizard', (config) => ({
     staticQuestions: config.staticQuestions || [],
     aiQuestionsUrl: config.aiQuestionsUrl,
     csrfToken: config.csrfToken,
+    authProfile: config.authProfile || null,
     phase: 'profile',
     profile: { name: '', about: '', status: 'exploring' },
     priorities: [],
@@ -25,6 +26,12 @@ Alpine.data('quizWizard', (config) => ({
     aiError: null,
     aiSource: null,
     encouragement: '',
+
+    init() {
+        if (this.authProfile?.name && !this.profile.name) {
+            this.profile.name = this.authProfile.name;
+        }
+    },
 
     statusOptions: [
         { value: 'school_9', label: 'Учусь в 9 классе', emoji: '🎒' },

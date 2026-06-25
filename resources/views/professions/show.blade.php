@@ -95,10 +95,55 @@
                 <span class="text-3xl">🗺️</span>
                 <div>
                     <h2 class="text-2xl font-extrabold text-slate-900">Твой путь к профессии</h2>
-                    <p class="text-sm text-slate-500">Пошаговый маршрут — от школы до работы</p>
+                    @if ($pathPersonalized)
+                        <p class="text-sm text-slate-500">
+                            @if ($pathTransition && ($pathTransition['type'] ?? '') === 'career_change')
+                                Переход: {{ $pathTransition['label'] ?? 'смена профессии' }}
+                            @else
+                                Персональный маршрут
+                            @endif
+                            @if ($pathSource === 'ai')
+                                <span class="text-violet-600 font-semibold">· ИИ</span>
+                            @endif
+                            @if ($pathTotalLabel)
+                                <span class="text-slate-400">· ~{{ $pathTotalLabel }}</span>
+                            @endif
+                        </p>
+                    @else
+                        <p class="text-sm text-slate-500">Пошаговый маршрут — от школы до работы</p>
+                    @endif
                 </div>
             </div>
-            <div class="youth-card p-6 sm:p-8">
+            <div class="youth-card p-6 sm:p-8 space-y-4">
+                @if ($pathPersonalized && $pathSummary)
+                    <div class="rounded-xl bg-gradient-to-r from-brand-50 to-violet-50 border border-brand-100 p-4">
+                        <p class="text-sm text-slate-700 leading-relaxed">{{ $pathSummary }}</p>
+                    </div>
+                @endif
+
+                @if ($pathHint)
+                    <p class="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-xl py-2 px-4">
+                        {{ $pathHint }}
+                        @guest
+                            <a href="{{ route('login') }}" class="font-bold underline ml-1">Войти</a>
+                            или
+                            <a href="{{ route('quiz.show') }}" class="font-bold underline">пройти тест</a>.
+                        @else
+                            <a href="{{ route('quiz.show') }}" class="font-bold underline ml-1">Пройти тест</a>
+                        @endguest
+                    </p>
+                @endif
+
+                @guest
+                    @if (! $pathPersonalized)
+                        <p class="text-sm text-brand-700 bg-brand-50 border border-brand-100 rounded-xl py-2 px-4">
+                            <a href="{{ route('login') }}" class="font-bold underline">Войди</a> и
+                            <a href="{{ route('quiz.show') }}" class="font-bold underline">пройди тест</a> —
+                            ИИ построит путь именно под тебя.
+                        </p>
+                    @endif
+                @endguest
+
                 <x-path-timeline :steps="$steps" />
             </div>
         </section>

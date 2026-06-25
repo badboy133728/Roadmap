@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\QuizResult;
 use App\Services\QuizAiService;
+use App\Services\QuizProfileService;
 use App\Services\QuizScoringService;
 use App\Services\QuizStaticQuestions;
 use Illuminate\Http\RedirectResponse;
@@ -14,14 +15,15 @@ use Illuminate\View\View;
 
 class QuizController extends Controller
 {
-    public function show(): View
+    public function show(QuizProfileService $profileService): View
     {
         return view('quiz.show', [
             'staticQuestions' => QuizStaticQuestions::all(),
+            'authProfile' => $profileService->authPrefill(),
         ]);
     }
 
-    public function submit(Request $request, QuizScoringService $scoringService): RedirectResponse
+    public function submit(Request $request, QuizScoringService $scoringService, QuizProfileService $profileService): RedirectResponse
     {
         $request->validate([
             'name' => ['nullable', 'string', 'max:50'],
@@ -36,12 +38,12 @@ class QuizController extends Controller
             'ai_answers.*' => ['required', 'string'],
         ]);
 
-        $profile = [
+        $profile = $profileService->fromQuizInput([
             'name' => $request->input('name') ? trim($request->input('name')) : null,
             'about' => $request->input('about') ? trim($request->input('about')) : null,
             'status' => $request->input('status'),
             'priorities' => array_values(array_unique($request->input('priorities', []))),
-        ];
+        ]);
 
         $staticAnswers = $request->input('static_answers', []);
         $aiQuestions = json_decode($request->input('ai_questions', '[]'), true) ?: [];
@@ -92,7 +94,7 @@ class QuizController extends Controller
         if (! $isLegacy) {
             $cached = $payload['ai_insights'] ?? null;
 
-            if (! $aiService->isCompleteInsights($cached)) {
+            if (! $aiService->isCompleteInsights($cached, $payload['profile'] ?? null)) {
                 $payload['ai_insights'] = $aiService->generate($result, $payload);
                 $result->update(['recommendations' => $payload]);
             }

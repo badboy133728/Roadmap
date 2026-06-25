@@ -9,6 +9,7 @@
                 'staticQuestions' => $staticQuestions,
                 'aiQuestionsUrl' => route('quiz.ai-questions'),
                 'csrfToken' => csrf_token(),
+                'authProfile' => $authProfile,
             ]) }})">
 
                 <div class="mb-6">
@@ -49,6 +50,17 @@
                             <span class="text-5xl mb-4 block">👋</span>
                             <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900">Давай познакомимся</h1>
                             <p class="mt-2 text-slate-600">Тест подстроится под твой возраст и цели</p>
+                            @if ($authProfile)
+                                <p class="mt-3 text-sm font-medium text-brand-700 bg-brand-50 border border-brand-100 rounded-xl py-2 px-4 inline-block">
+                                    ✨ Ты вошёл в аккаунт — ИИ учтёт город
+                                    @if (! empty($authProfile['city_name']))
+                                        ({{ $authProfile['city_name'] }})
+                                    @endif
+                                    @if (! empty($authProfile['current_profession']))
+                                        и профессию «{{ $authProfile['current_profession'] }}»
+                                    @endif
+                                </p>
+                            @endif
                         </div>
 
                         <div class="youth-card p-6 sm:p-8 space-y-6">

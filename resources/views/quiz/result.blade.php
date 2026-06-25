@@ -234,6 +234,42 @@
                             </div>
                         @endif
 
+                        @if (! empty($aiInsights['vacancy_examples']))
+                            <div class="youth-card p-5">
+                                <h3 class="font-extrabold text-slate-900 mb-1">💼 Актуальные вакансии для тебя</h3>
+                                <p class="text-sm text-slate-500 mb-4">Реальные примеры из базы — можно откликнуться или ориентироваться на требования</p>
+                                <div class="space-y-3">
+                                    @foreach ($aiInsights['vacancy_examples'] as $vacancy)
+                                        <div class="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+                                            <div class="flex items-start justify-between gap-3">
+                                                <div>
+                                                    <p class="text-xs font-bold text-brand-600 uppercase tracking-wide">{{ $vacancy['profession_name'] ?? '' }}</p>
+                                                    <h4 class="font-extrabold text-slate-900 mt-1">{{ $vacancy['title'] ?? '' }}</h4>
+                                                    <p class="text-sm text-slate-600 mt-1">{{ $vacancy['company'] ?? '' }}</p>
+                                                </div>
+                                                @if (! empty($vacancy['salary_text']))
+                                                    <span class="text-sm font-bold text-emerald-700 whitespace-nowrap">{{ $vacancy['salary_text'] }}</span>
+                                                @endif
+                                            </div>
+                                            @if (! empty($vacancy['why_relevant']))
+                                                <p class="text-sm text-slate-600 mt-3 leading-relaxed">{{ $vacancy['why_relevant'] }}</p>
+                                            @endif
+                                            <div class="mt-3 flex flex-wrap gap-2">
+                                                @if (! empty($vacancy['profession_slug']))
+                                                    <a href="{{ route('professions.show', $vacancy['profession_slug']) }}#vacancies"
+                                                       class="text-xs font-bold text-brand-600 hover:text-brand-800">Все вакансии →</a>
+                                                @endif
+                                                @if (! empty($vacancy['external_url']))
+                                                    <a href="{{ $vacancy['external_url'] }}" target="_blank" rel="noopener"
+                                                       class="text-xs font-bold text-fuchsia-600 hover:text-fuchsia-800">Открыть вакансию ↗</a>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
+
                         @if (! empty($aiInsights['less_suitable']))
                             <div class="youth-card p-5 bg-slate-50">
                                 <h3 class="font-extrabold text-slate-700 mb-3">⚠️ Пока менее подходит</h3>

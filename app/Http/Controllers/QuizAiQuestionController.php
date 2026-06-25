@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\QuizAiService;
+use App\Services\QuizProfileService;
 use App\Services\QuizScoringService;
 use App\Services\QuizStaticQuestions;
 use Illuminate\Http\JsonResponse;
@@ -11,7 +12,7 @@ use Illuminate\Validation\ValidationException;
 
 class QuizAiQuestionController extends Controller
 {
-    public function __invoke(Request $request, QuizAiService $aiService, QuizScoringService $scoringService): JsonResponse
+    public function __invoke(Request $request, QuizAiService $aiService, QuizScoringService $scoringService, QuizProfileService $profileService): JsonResponse
     {
         $request->validate([
             'name' => ['nullable', 'string', 'max:50'],
@@ -27,12 +28,12 @@ class QuizAiQuestionController extends Controller
             'round' => ['nullable', 'integer', 'min:0'],
         ]);
 
-        $profile = [
+        $profile = $profileService->fromQuizInput([
             'name' => $request->input('name') ? trim($request->input('name')) : null,
             'about' => $request->input('about') ? trim($request->input('about')) : null,
             'status' => $request->input('status'),
             'priorities' => array_values(array_unique($request->input('priorities', []))),
-        ];
+        ]);
 
         $staticAnswers = $request->input('static_answers', []);
         $aiQuestions = json_decode($request->input('ai_questions', '[]'), true) ?: [];
