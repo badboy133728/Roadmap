@@ -148,6 +148,26 @@
                                             Вакансии →
                                         </a>
                                     </div>
+
+                                    @php
+                                        $profId = $item['profession_id'] ?? null;
+                                        $profEducation = $profId ? ($educationByProfession[$profId] ?? null) : null;
+                                    @endphp
+                                    @if (! empty($profEducation['items']))
+                                        <div class="mt-4 pt-4 border-t border-slate-100">
+                                            <p class="text-xs font-bold text-fuchsia-600 uppercase tracking-wider mb-2">ИИ: где учиться</p>
+                                            <ul class="space-y-2">
+                                                @foreach (array_slice($profEducation['items'], 0, 2) as $school)
+                                                    <li class="text-sm text-slate-600">
+                                                        <span class="font-semibold text-slate-800">{{ $school->name }}</span>
+                                                        @if (! empty($school->why_fit))
+                                                            <span class="block text-xs text-slate-500 mt-0.5">{{ Str::limit($school->why_fit, 120) }}</span>
+                                                        @endif
+                                                    </li>
+                                                @endforeach
+                                            </ul>
+                                        </div>
+                                    @endif
                                 </div>
                             </div>
                         </article>
@@ -217,6 +237,32 @@
                             <div class="youth-card p-5">
                                 <h3 class="font-extrabold text-slate-900 mb-2">🎓 Путь обучения</h3>
                                 <p class="text-sm text-slate-600 leading-relaxed">{{ $aiInsights['education_path'] }}</p>
+                            </div>
+                        @endif
+
+                        @if (! empty($educationByProfession))
+                            <div class="youth-card p-5">
+                                <h3 class="font-extrabold text-slate-900 mb-1">🎓 Где учиться — подбор ИИ</h3>
+                                <p class="text-sm text-slate-500 mb-4">Вузы и колледжи для топ-профессий в твоём городе</p>
+                                <div class="space-y-6">
+                                    @foreach (collect($recommendations)->take(3) as $item)
+                                        @php
+                                            $profId = $item['profession_id'] ?? null;
+                                            $block = $profId ? ($educationByProfession[$profId] ?? null) : null;
+                                        @endphp
+                                        @if ($block && count($block['items'] ?? []))
+                                            <div>
+                                                <h4 class="font-bold text-slate-800 mb-2">{{ $item['profession_name'] ?? 'Профессия' }}</h4>
+                                                <x-education-institutions
+                                                    :items="$block['items']"
+                                                    :summary="$block['summary'] ?? null"
+                                                    :admission-tips="$block['admission_tips'] ?? []"
+                                                    :source="$block['source'] ?? 'db'"
+                                                />
+                                            </div>
+                                        @endif
+                                    @endforeach
+                                </div>
                             </div>
                         @endif
 

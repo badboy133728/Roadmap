@@ -39,17 +39,9 @@
                         💰 от {{ number_format($medianSalary, 0, ',', ' ') }} ₽ в {{ $city->name }}
                     </span>
                 @endif
-                @if ($institutions->count())
+                @if (count($education['items'] ?? []))
                     <span class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 border border-white/20 text-sm font-semibold">
-                        🎓 {{ $institutions->count() }}
-                        @if ($institutions->count() % 10 == 1 && $institutions->count() % 100 != 11)
-                            заведение
-                        @elseif (in_array($institutions->count() % 10, [2,3,4]) && ! in_array($institutions->count() % 100, [12,13,14]))
-                            заведения
-                        @else
-                            заведений
-                        @endif
-                        в городе
+                        🎓 {{ count($education['items']) }} от ИИ
                     </span>
                 @endif
             </div>
@@ -72,8 +64,8 @@
                 <a href="#salary" class="shrink-0 px-4 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-brand-50 hover:text-brand-700 transition">💰 Зарплата</a>
                 <a href="#education" class="shrink-0 px-4 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-fuchsia-50 hover:text-fuchsia-700 transition">
                     🎓 Где учиться
-                    @if ($institutions->count())
-                        <span class="ml-1 px-1.5 py-0.5 rounded-full bg-fuchsia-100 text-fuchsia-700 text-xs">{{ $institutions->count() }}</span>
+                    @if (count($education['items'] ?? []))
+                        <span class="ml-1 px-1.5 py-0.5 rounded-full bg-fuchsia-100 text-fuchsia-700 text-xs">{{ count($education['items']) }}</span>
                     @endif
                 </a>
                 <a href="#vacancies" class="shrink-0 px-4 py-2 rounded-xl text-sm font-bold text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 transition">
@@ -166,70 +158,20 @@
                 <span class="text-3xl">🎓</span>
                 <div>
                     <h2 class="text-2xl font-extrabold text-slate-900">Где учиться в {{ $city->name }}</h2>
-                    <p class="text-sm text-slate-500">Вузы, колледжи и курсы для профессии «{{ $profession->name }}»</p>
+                    <p class="text-sm text-slate-500">
+                        ИИ подбирает вузы и колледжи для «{{ $profession->name }}»
+                        @auth с учётом профиля и теста @endauth
+                    </p>
                 </div>
             </div>
 
-            @if ($institutions->count())
-                <div class="grid gap-4 sm:grid-cols-2">
-                    @foreach ($institutions as $institution)
-                        @php $programs = $institution->educationPrograms; @endphp
-                        <div class="youth-card p-5 sm:p-6 hover:shadow-card-hover transition-all group">
-                            <div class="flex items-start justify-between gap-3 mb-3">
-                                <div>
-                                    <span class="inline-flex px-2 py-0.5 rounded-lg text-xs font-bold
-                                        {{ $institution->type === 'university' ? 'bg-brand-100 text-brand-700' : ($institution->type === 'college' ? 'bg-amber-100 text-amber-700' : 'bg-fuchsia-100 text-fuchsia-700') }}">
-                                        {{ $typeLabels[$institution->type] ?? $institution->type }}
-                                    </span>
-                                    <h3 class="font-extrabold text-slate-900 mt-2 group-hover:text-brand-700 transition leading-snug">
-                                        {{ $institution->name }}
-                                    </h3>
-                                    @if ($institution->address)
-                                        <p class="text-sm text-slate-500 mt-1">📍 {{ $institution->address }}</p>
-                                    @endif
-                                </div>
-                            </div>
-
-                            @if ($programs->count())
-                                <div class="mt-4 pt-4 border-t border-slate-100">
-                                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Программы</p>
-                                    <ul class="space-y-2">
-                                        @foreach ($programs as $program)
-                                            <li class="flex items-start gap-2 text-sm">
-                                                <span class="text-brand-500 mt-0.5">→</span>
-                                                <div>
-                                                    <span class="font-semibold text-slate-800">{{ $program->name }}</span>
-                                                    <span class="text-slate-400 text-xs ml-1">
-                                                        @if ($program->duration_years){{ $program->duration_years }} лет@endif
-                                                        @if ($program->study_form) · {{ $program->study_form }}@endif
-                                                    </span>
-                                                </div>
-                                            </li>
-                                        @endforeach
-                                    </ul>
-                                </div>
-                            @endif
-
-                            @if ($institution->website)
-                                <a href="{{ $institution->website }}" target="_blank" rel="noopener"
-                                   class="mt-4 inline-flex items-center gap-1 text-sm font-bold text-brand-600 hover:text-brand-800">
-                                    Перейти на сайт
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
-                                    </svg>
-                                </a>
-                            @endif
-                        </div>
-                    @endforeach
-                </div>
-            @else
-                <div class="youth-card p-8 text-center">
-                    <span class="text-4xl">🏫</span>
-                    <p class="mt-3 font-semibold text-slate-700">Программы для этой профессии скоро появятся</p>
-                    <p class="text-sm text-slate-500 mt-1">В {{ $city->name }} есть {{ $institutionCount }} учебных заведений — мы дополняем базу</p>
-                    <a href="{{ route('quiz.show') }}" class="btn-glow mt-5 inline-flex">Пройти тест — подберём направление</a>
-                </div>
-            @endif
+            <x-education-institutions
+                :items="$education['items'] ?? []"
+                :summary="$education['summary'] ?? null"
+                :admission-tips="$education['admission_tips'] ?? []"
+                :source="$education['source'] ?? 'db'"
+                :type-labels="$typeLabels"
+            />
         </section>
 
         {{-- Вакансии --}}

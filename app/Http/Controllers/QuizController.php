@@ -2,7 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Profession;
 use App\Models\QuizResult;
+use App\Services\CityService;
+use App\Services\InstitutionAiService;
 use App\Services\QuizAiService;
 use App\Services\QuizProfileService;
 use App\Services\QuizScoringService;
@@ -82,10 +85,15 @@ class QuizController extends Controller
         return redirect()->route('quiz.result', $sessionId);
     }
 
-    public function result(string $sessionId, QuizAiService $aiService): View
-    {
+    public function result(
+        string $sessionId,
+        QuizAiService $aiService,
+        InstitutionAiService $institutionAi,
+        CityService $cityService,
+    ): View {
         $result = QuizResult::query()
             ->where('session_id', $sessionId)
+            ->with('user')
             ->firstOrFail();
 
         $payload = $result->recommendations ?? [];
@@ -100,6 +108,33 @@ class QuizController extends Controller
             }
         }
 
+        $educationByProfession = [];
+        if (! $isLegacy) {
+            $city = $cityService->current();
+            $user = $result->user;
+            $topItems = collect($payload['list'] ?? [])->take(3);
+
+            foreach ($topItems as $item) {
+                $profession = null;
+                if (! empty($item['profession_id'])) {
+                    $profession = Profession::with('category')->find($item['profession_id']);
+                } elseif (! empty($item['profession_slug'])) {
+                    $profession = Profession::with('category')->where('slug', $item['profession_slug'])->first();
+                }
+
+                if (! $profession) {
+                    continue;
+                }
+
+                $educationByProfession[$profession->id] = $institutionAi->recommend(
+                    $profession,
+                    $city,
+                    $user,
+                    $result,
+                );
+            }
+        }
+
         return view('quiz.result', [
             'result' => $result,
             'sessionId' => $sessionId,
@@ -111,6 +146,7 @@ class QuizController extends Controller
             'interestProfile' => $isLegacy ? [] : ($payload['interest_profile'] ?? []),
             'statusAdvice' => $isLegacy ? null : ($payload['status_advice'] ?? null),
             'aiInsights' => $isLegacy ? null : ($payload['ai_insights'] ?? null),
+            'educationByProfession' => $educationByProfession,
         ]);
     }
 

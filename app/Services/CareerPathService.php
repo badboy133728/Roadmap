@@ -5,14 +5,16 @@ namespace App\Services;
 use App\Models\Profession;
 use App\Models\QuizResult;
 use App\Models\User;
+use App\Services\Concerns\CallsOpenAiJson;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class CareerPathService
 {
-  private const CACHE_VERSION = 'v3';
+  use CallsOpenAiJson;
+
+  private const CACHE_VERSION = 'v4';
 
   private array $statusLabels = [
     'school_9' => 'учится в 9 классе',
@@ -72,6 +74,7 @@ class CareerPathService
   public function __construct(
     private QuizProfileService $profiles,
     private CatalogService $catalog,
+    private InstitutionAiService $institutionAi,
   ) {}
 
   public function forProfession(
@@ -80,6 +83,8 @@ class CareerPathService
     object $city,
     Collection $vacancies,
     Collection $institutions,
+    ?Profession $fromOverride = null,
+    ?array $educationAi = null,
   ): array {
     $staticSteps = $profession->careerPathSteps;
 
@@ -101,8 +106,13 @@ class CareerPathService
       ->latest()
       ->first();
 
-    $fromProfession = $user->currentProfession;
+    $fromProfession = $fromOverride ?? $user->currentProfession;
+    if ($fromProfession && ! $fromProfession->relationLoaded('category')) {
+      $fromProfession->load('category');
+    }
     $fromKey = $fromProfession?->id ?? 'none';
+
+    $educationAi ??= $this->institutionAi->recommend($profession, $city, $user, $quizResult);
 
     $cacheKey = sprintf(
       '%s:career_path:%d:%d:%s:%s:%d',
@@ -123,6 +133,7 @@ class CareerPathService
       $quizResult,
       $staticSteps,
       $fromProfession,
+      $educationAi,
     ) {
       $context = $this->buildContext(
         $profession,
@@ -132,6 +143,7 @@ class CareerPathService
         $institutions,
         $quizResult,
         $fromProfession,
+        $educationAi,
       );
 
       if ($this->isAiAvailable()) {
@@ -166,6 +178,7 @@ class CareerPathService
     Collection $institutions,
     ?QuizResult $quizResult,
     ?Profession $fromProfession,
+    array $educationAi = [],
   ): array {
     $quizPayload = $quizResult?->recommendations ?? [];
     $quizProfile = $quizPayload['profile'] ?? [];
@@ -213,6 +226,17 @@ class CareerPathService
         'type' => $i->type ?? null,
         'programs' => $i->educationPrograms?->pluck('name')->take(3)->all() ?? [],
       ])->values()->all(),
+      'education_ai' => [
+        'summary' => $educationAi['summary'] ?? null,
+        'admission_tips' => $educationAi['admission_tips'] ?? [],
+        'institutions' => collect($educationAi['items'] ?? [])->map(fn ($i) => [
+          'name' => $i->name ?? '',
+          'type' => $i->type ?? null,
+          'why_fit' => $i->why_fit ?? '',
+          'programs' => collect($i->programs ?? [])->pluck('name')->take(3)->all(),
+        ])->values()->all(),
+      ],
+      'quiz_answers' => $this->formatQuizAnswers($quizResult),
       'reference_steps' => $profession->careerPathSteps->map(fn ($s) => [
         'step_type' => $s->step_type,
         'title' => $s->title,
@@ -321,13 +345,11 @@ class CareerPathService
 
   private function generateWithApi(array $context): ?array
   {
-    $decoded = $this->callJsonApi(
-      'Ты опытный профориентолог и карьерный консультант для молодёжи и взрослых в России. '
-      . 'Строишь ПОЛНЫЙ реалистичный пошаговый маршрут от текущей точки до целевой профессии. '
-      . 'Не сокращай путь: для смены сферы (например IT → медицина) обязательно включай всё формальное обучение, '
-      . 'практику, экзамены, аккредитацию и лицензии. Пиши на «ты», по-русски. Отвечай строго JSON.',
-      $this->buildPrompt($context),
-    );
+    $system = 'Ты опытный профориентолог в России. Строишь УНИКАЛЬНЫЙ персональный маршрут — не шаблон «школа-колледж-работа». '
+      . 'Каждый шаг привязан к имени человека, его текущей профессии и ответам теста. '
+      . 'Для смены сферы включай всё формальное обучение, экзамены, аккредитацию. Отвечай строго JSON.';
+
+    $decoded = $this->callOpenAiJson($system, $this->buildPrompt($context), 0.8, 6000);
 
     if (! is_array($decoded) || empty($decoded['steps'])) {
       return null;
@@ -335,6 +357,23 @@ class CareerPathService
 
     $minSteps = $context['min_steps'] ?? 8;
     $steps = $this->normalizeSteps($decoded['steps'], $minSteps);
+
+    if (count($steps) < max(5, (int) floor($minSteps * 0.6))) {
+      $expand = $this->callOpenAiJson(
+        $system,
+        $this->buildExpandPrompt($context, $steps, $minSteps),
+        0.75,
+        6000,
+      );
+
+      if (is_array($expand) && ! empty($expand['steps'])) {
+        $expanded = $this->normalizeSteps($expand['steps'], $minSteps);
+        if (count($expanded) > count($steps)) {
+          $steps = $expanded;
+          $decoded['summary'] = $expand['summary'] ?? $decoded['summary'];
+        }
+      }
+    }
 
     if ($steps === []) {
       return null;
@@ -378,9 +417,17 @@ class CareerPathService
       ->map(fn ($v) => "- {$v['title']} ({$v['company']})" . ($v['salary_text'] ? ", {$v['salary_text']}" : ''))
       ->implode("\n") ?: 'нет в базе';
 
-    $schools = collect($context['institutions'])
-      ->map(fn ($i) => '- ' . $i['name'] . ($i['programs'] ? ': ' . implode(', ', $i['programs']) : ''))
-      ->implode("\n") ?: 'нет в базе для этого города';
+    $schools = collect($context['education_ai']['institutions'] ?? [])
+      ->map(fn ($i) => '- ' . $i['name'] . ($i['why_fit'] ? ' — ' . $i['why_fit'] : '')
+        . ($i['programs'] ? ' [' . implode(', ', $i['programs']) . ']' : ''))
+      ->implode("\n")
+      ?: collect($context['institutions'])
+        ->map(fn ($i) => '- ' . $i['name'] . ($i['programs'] ? ': ' . implode(', ', $i['programs']) : ''))
+        ->implode("\n")
+      ?: 'нет в базе для этого города';
+
+    $educationSummary = $context['education_ai']['summary'] ?? '';
+    $quizAnswers = $context['quiz_answers'] ?? 'ответы не указаны';
 
     $fromBlock = $from
       ? <<<FROM
@@ -438,21 +485,23 @@ REG;
 Интересы: {$interests}
 {$matchLine}
 
-Учебные заведения в городе (упоминай, если подходят):
+Ответы из теста (учитывай в шагах):
+{$quizAnswers}
+
+ИИ-подбор учебных заведений:
+{$educationSummary}
 {$schools}
 
-Вакансии по целевой профессии (только в финальных шагах, не выдумывай другие):
+Вакансии (только в финальных шагах):
 {$vacancies}
 
-КРИТИЧЕСКИ ВАЖНЫЕ ПРАВИЛА:
-1. Минимум {$minSteps} шагов. Для перехода между разными сферами — 12–16 шагов.
-2. Первый шаг — отталкивайся от ТЕКУЩЕЙ профессии в профиле (что уже есть, что сохранить, что придётся менять).
-3. Каждый шаг: title (кратко) + description (3–5 предложений с конкретными действиями, сроками, документами).
-4. Реалистичные duration_months (месяцы). Для вуза — 48–72, ординатуры — 24–60, курсов — 3–12.
-5. Для медицины (хирург, терапевт и т.д.): подготовка к поступлению → медвуз → клиническая практика → интернатура → ординатура → аккредитация → работа.
-6. Для IT→медицина: явно укажи, что нужно второе высшее / переподготовка, ЕГЭ/вступительные по биологии и химии, отказ от быстрого пути.
-7. Для школьника — школа, ЕГЭ, поступление. Для работающего — совмещение, отпуск, финансовое планирование.
-8. step_type: start, assessment, school, exam, college, university, course, practice, internship, residency, accreditation, license, work, transition
+КРИТИЧЕСКИ ВАЖНО — НЕ ШАБЛОН:
+1. Минимум {$minSteps} шагов. Для смены сферы — 12–16 шагов.
+2. Каждый title уникален. В description ОБЯЗАТЕЛЬНО имя «{$name}» и отсылка к текущей профессии/статусу.
+3. Шаги про обучение — конкретные вузы из списка выше с программами.
+4. ЗАПРЕЩЕНО: «Закрепи базу», «Прокачай навыки» без контекста; пропуск медобразования при переходе в медицину.
+5. duration_months реалистичны: вуз 48–72, ординатура 24–60.
+6. step_type: start, assessment, school, exam, college, university, course, practice, internship, residency, accreditation, license, work, transition
 
 JSON:
 {
@@ -503,11 +552,61 @@ PROMPT;
       })
       ->all();
 
-    if (count($normalized) < max(4, $minSteps - 2)) {
+    if (count($normalized) < 5) {
       return [];
     }
 
     return $normalized;
+  }
+
+  private function buildExpandPrompt(array $context, array $existingSteps, int $minSteps): string
+  {
+    $existing = collect($existingSteps)
+      ->map(fn ($s, $i) => ($i + 1) . '. ' . $s->title)
+      ->implode("\n");
+
+    $name = $context['profile']['name'] ?? 'Пользователь';
+
+    return <<<PROMPT
+Маршрут для «{$name}» слишком короткий ({$minSteps} шагов минимум). Расширь его.
+
+Уже есть:
+{$existing}
+
+Добавь недостающие этапы: экзамены, конкретные вузы, практику, аккредитацию, стажировку.
+Каждый шаг — уникальный, с именем «{$name}» в description.
+Верни ПОЛНЫЙ список steps (не только новые) в том же JSON-формате с summary.
+PROMPT;
+  }
+
+  private function formatQuizAnswers(?QuizResult $quizResult): string
+  {
+    if (! $quizResult) {
+      return 'тест не пройден';
+    }
+
+    $answers = $quizResult->answers ?? [];
+    $lines = [];
+
+    foreach (array_slice($answers, 0, 12) as $answer) {
+      if (! is_array($answer)) {
+        continue;
+      }
+
+      $question = $answer['question'] ?? $answer['question_text'] ?? null;
+      $text = $answer['answer_text'] ?? $answer['text'] ?? $answer['value'] ?? null;
+
+      if ($question && $text) {
+        $lines[] = "- {$question}: {$text}";
+      }
+    }
+
+    $payload = $quizResult->recommendations ?? [];
+    if ($about = $payload['profile']['about'] ?? null) {
+      $lines[] = "- О себе: {$about}";
+    }
+
+    return $lines ? implode("\n", $lines) : 'детали ответов не сохранены';
   }
 
   private function generateLocal(array $context, Collection $staticSteps): array
@@ -902,39 +1001,5 @@ PROMPT;
       2, 3, 4 => 'года',
       default => 'лет',
     };
-  }
-
-  private function callJsonApi(string $system, string $userPrompt): ?array
-  {
-    $timeout = max((int) config('ai.openai.timeout'), 45);
-
-    $response = Http::withToken(config('ai.openai.api_key'))
-      ->timeout($timeout)
-      ->post(rtrim(config('ai.openai.base_url'), '/') . '/chat/completions', [
-        'model' => config('ai.openai.model'),
-        'temperature' => 0.65,
-        'max_tokens' => 4000,
-        'response_format' => ['type' => 'json_object'],
-        'messages' => [
-          ['role' => 'system', 'content' => $system],
-          ['role' => 'user', 'content' => $userPrompt],
-        ],
-      ]);
-
-    if (! $response->successful()) {
-      Log::warning('CareerPathService API error', ['status' => $response->status()]);
-
-      return null;
-    }
-
-    $content = $response->json('choices.0.message.content');
-
-    if (! is_string($content)) {
-      return null;
-    }
-
-    $decoded = json_decode($content, true);
-
-    return is_array($decoded) ? $decoded : null;
   }
 }

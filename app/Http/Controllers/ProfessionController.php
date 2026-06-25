@@ -4,9 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\Institution;
 use App\Models\Profession;
+use App\Models\QuizResult;
 use App\Services\CareerPathService;
 use App\Services\CatalogService;
 use App\Services\CityService;
+use App\Services\InstitutionAiService;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -41,8 +43,13 @@ class ProfessionController extends Controller
         ]);
     }
 
-    public function show(Profession $profession, CityService $cityService, CatalogService $catalog, CareerPathService $careerPathService): View
-    {
+    public function show(
+        Profession $profession,
+        CityService $cityService,
+        CatalogService $catalog,
+        CareerPathService $careerPathService,
+        InstitutionAiService $institutionAi,
+    ): View {
         abort_unless($profession->is_active, 404);
 
         $city = $cityService->current();
@@ -74,12 +81,21 @@ class ProfessionController extends Controller
             ->limit(6)
             ->get();
 
+        $user = auth()->user();
+        $quizResult = $user
+            ? QuizResult::query()->where('user_id', $user->id)->latest()->first()
+            : null;
+
+        $educationData = $institutionAi->recommend($profession, $city, $user, $quizResult);
+
         $pathData = $careerPathService->forProfession(
             $profession,
-            auth()->user(),
+            $user,
             $city,
             $vacancies,
             $institutions,
+            null,
+            $educationData,
         );
 
         return view('professions.show', [
@@ -95,6 +111,7 @@ class ProfessionController extends Controller
             'pathTotalLabel' => $pathData['total_years_label'] ?? null,
             'salaries' => $salaries,
             'institutions' => $institutions,
+            'education' => $educationData,
             'institutionCount' => $institutionCount,
             'vacancies' => $vacancies,
             'jobPlatforms' => $catalog->jobPlatforms(),

@@ -96,9 +96,27 @@
         </div>
 
         <section class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm mb-8">
-            <h2 class="text-xl font-bold text-slate-900 mb-6">Шаги перехода</h2>
+            <h2 class="text-xl font-bold text-slate-900 mb-2">Шаги перехода</h2>
+            @if (! empty($plan['path_summary']))
+                <p class="text-sm text-slate-600 mb-4 leading-relaxed">{{ $plan['path_summary'] }}</p>
+            @endif
+            @if (($plan['path_source'] ?? '') === 'ai')
+                <p class="text-xs text-violet-600 font-semibold mb-4">Маршрут построен ИИ · {{ $plan['path_total_label'] ?? '' }}</p>
+            @endif
             <x-path-timeline :steps="$plan['steps']" />
         </section>
+
+        @if (! empty($plan['education']))
+            <section class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm mb-8">
+                <h2 class="text-xl font-bold text-slate-900 mb-4">Где учиться в {{ $plan['city']->name ?? '' }}</h2>
+                <x-education-institutions
+                    :items="$plan['education']['items'] ?? []"
+                    :summary="$plan['education']['summary'] ?? null"
+                    :admission-tips="$plan['education']['admission_tips'] ?? []"
+                    :source="$plan['education']['source'] ?? 'db'"
+                />
+            </section>
+        @endif
 
         <div class="flex flex-wrap gap-3 justify-center">
             <a href="{{ route('professions.show', $plan['to']) }}"
